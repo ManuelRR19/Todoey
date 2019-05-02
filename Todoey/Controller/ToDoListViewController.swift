@@ -9,10 +9,13 @@
 import UIKit
 import RealmSwift
 
-class ToDoListViewController: UITableViewController {
+class ToDoListViewController: SwipeTableViewController {
 
     let realm = try! Realm()
     var todoItems : Results<Item>?
+    
+    @IBOutlet weak var searchBar: UISearchBar!
+    
     var selectedCategory : Category? {
         didSet {
             loadItems()
@@ -22,6 +25,35 @@ class ToDoListViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        tableView.separatorStyle = .none
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        
+        guard let categoryColorCode = selectedCategory?.backgroundColor else {fatalError()}
+        
+        title = selectedCategory?.name
+        
+        updateNavBar(withHexCode: categoryColorCode)
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        updateNavBar(withHexCode: "#011993")
+    }
+    
+    
+    //MARK: - NavBar setup methods
+    
+    func updateNavBar(withHexCode colorCode: String) {
+        
+        guard let navBar = navigationController?.navigationBar else {fatalError("Navigation controller does not exist")}
+        
+        guard let categoryColor = UIColor(hexString: colorCode) else {fatalError()}
+        
+        navBar.barTintColor = categoryColor
+        navBar.tintColor = UIColor(contrastingBlackOrWhiteColorOn: categoryColor, isFlat: true)
+        navBar.largeTitleTextAttributes = [NSAttributedString.Key.foregroundColor : UIColor(contrastingBlackOrWhiteColorOn: categoryColor, isFlat: true)]
+        searchBar.barTintColor = categoryColor
     }
     
     
@@ -34,11 +66,12 @@ class ToDoListViewController: UITableViewController {
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         
-        let cell = tableView.dequeueReusableCell(withIdentifier: "ToDoItemCell", for: indexPath)
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
         
         if let item = todoItems?[indexPath.row] {
             cell.textLabel?.text = item.title
-            
+            cell.backgroundColor = UIColor(hexString: selectedCategory!.backgroundColor)?.darken(byPercentage: (CGFloat(indexPath.row)/CGFloat(todoItems!.count)))
+            cell.textLabel?.textColor = UIColor(contrastingBlackOrWhiteColorOn:cell.backgroundColor!, isFlat:true)
             cell.accessoryType = item.done ? .checkmark : .none
         } else {
             cell.textLabel?.text = "No items added yet"
@@ -72,37 +105,7 @@ class ToDoListViewController: UITableViewController {
     
     @IBAction func addButtonPressed(_ sender: UIBarButtonItem) {
         
-        var textField = UITextField()
-        
-        let alert = UIAlertController(title: "Add new Todoey item:", message: nil, preferredStyle: .alert)
-        let cancel = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
-        let action = UIAlertAction(title: "Add", style: .default) { (action) in
-            // What will happen when the Add item button is clicked
-
-            if let currentCategory = self.selectedCategory {
-                do {
-                    try self.realm.write {
-                        let newItem = Item()
-                        newItem.title = textField.text!
-                        newItem.dateCreated = Date()
-                        currentCategory.items.append(newItem)
-                    }
-                } catch {
-                    print("Error saving new items, \(error)")
-                }
-            }
-            
-            self.tableView.reloadData()
-        }
-        
-        alert.addTextField { (alertTextField) in
-            alertTextField.placeholder = "Create new item"
-            textField = alertTextField
-        }
-        
-        alert.addAction(cancel)
-        alert.addAction(action)
-        present(alert, animated: true, completion: nil)
+        actionToAddOrEdit(alertTitle: "Add new Todoey item:", placeholderText: "Create new item", actionText: "Add", indexPath: nil)
     }
     
     
@@ -113,6 +116,27 @@ class ToDoListViewController: UITableViewController {
         todoItems = selectedCategory?.items.sorted(byKeyPath: "dateCreated", ascending: true)
         
         tableView.reloadData()
+    }
+    
+    override func editDataInModel(at indexPath: IndexPath) {
+        
+        actionToAddOrEdit(alertTitle: "Edit item:", placeholderText: "Item to edit", actionText: "Edit", indexPath: indexPath)
+    }
+    
+    
+    //MARK: Data deletion using swipe
+    
+    override func deleteDataInModel(at indexPath: IndexPath) {
+        
+        if let itemToDelete = todoItems?[indexPath.row] {
+            do {
+                try realm.write {
+                    realm.delete(itemToDelete)
+                }
+            } catch {
+                print("Error deleting item, \(error)")
+            }
+        }
     }
 }
 
@@ -137,5 +161,61 @@ extension ToDoListViewController: UISearchBarDelegate {
                 searchBar.resignFirstResponder()
             }
         }
+    }
+    
+    
+    //MARK: - Create add or edit method with alert
+    
+    func actionToAddOrEdit(alertTitle: String, placeholderText: String, actionText: String, indexPath: IndexPath?) {
+        
+        var textField = UITextField()
+        
+        let alert = UIAlertController(title: alertTitle, message: nil, preferredStyle: .alert)
+        let cancel = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
+        let action = UIAlertAction(title: actionText, style: .default) { (action) in
+            
+            if actionText == "Add" {
+                
+                if let currentCategory = self.selectedCategory {
+                    do {
+                        try self.realm.write {
+                            let newItem = Item()
+                            newItem.title = textField.text!
+                            newItem.dateCreated = Date()
+                            currentCategory.items.append(newItem)
+                        }
+                    } catch {
+                        print("Error saving new item, \(error)")
+                    }
+                }
+                
+                self.tableView.reloadData()
+            }
+            else if actionText == "Edit" {
+                
+                if let itemToEdit = self.todoItems?[(indexPath?.row)!] {
+                    do {
+                        try self.realm.write {
+                            itemToEdit.title = textField.text!
+                        }
+                    } catch {
+                        print("Error editing item, \(error)")
+                    }
+                }
+                self.tableView.reloadData()
+            }
+        }
+        
+        alert.addTextField { (alertTextField) in
+            alertTextField.placeholder = placeholderText
+            textField = alertTextField
+            if actionText == "Edit" {
+                textField.text = self.todoItems?[(indexPath?.row)!].title
+            }
+        }
+        
+        alert.addAction(cancel)
+        alert.addAction(action)
+        present(alert, animated: true, completion: nil)
     }
 }

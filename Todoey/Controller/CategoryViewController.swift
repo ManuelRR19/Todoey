@@ -8,8 +8,9 @@
 
 import UIKit
 import RealmSwift
+import ChameleonFramework
 
-class CategoryViewController: UITableViewController {
+class CategoryViewController: SwipeTableViewController {
     
     let realm = try! Realm()
     var categoryArray : Results<Category>?
@@ -17,6 +18,7 @@ class CategoryViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        tableView.separatorStyle = .none
         loadCategories()
     }
     
@@ -30,10 +32,12 @@ class CategoryViewController: UITableViewController {
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         
-        let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath)
+        let cell = super.tableView(tableView, cellForRowAt: indexPath)
         
         cell.textLabel?.text = categoryArray?[indexPath.row].name ?? "No categories added yet"
-        
+        cell.backgroundColor = UIColor(hexString: categoryArray?[indexPath.row].backgroundColor ?? "#FFFFFF")
+        cell.textLabel?.textColor = UIColor(contrastingBlackOrWhiteColorOn:cell.backgroundColor!, isFlat:true)
+
         return cell
     }
     
@@ -63,28 +67,9 @@ class CategoryViewController: UITableViewController {
     
     @IBAction func addButtonPressed(_ sender: UIBarButtonItem) {
         
-        var textField = UITextField()
+        actionToAddOrEdit(alertTitle: "Add a new category:", placeholderText: "Create new category", actionText: "Add", indexPath: nil)
         
-        let alert = UIAlertController(title: "Add a new category:", message: nil, preferredStyle: .alert)
-        let cancel = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
-        let action = UIAlertAction(title: "Add", style: .default) { (action) in
-            
-            let newCategory = Category()
-            newCategory.name = textField.text!
-            
-            self.saveCategories(newCategory)
-        }
-        
-        alert.addTextField { (alertTextField) in
-            alertTextField.placeholder = "Create new category"
-            textField = alertTextField
-        }
-        
-        alert.addAction(cancel)
-        alert.addAction(action)
-        present(alert, animated: true, completion: nil)
     }
-    
     
     //MARK: - Model manipulation methods
     
@@ -107,4 +92,76 @@ class CategoryViewController: UITableViewController {
         
         tableView.reloadData()
     }
+    
+    override func editDataInModel(at indexPath: IndexPath) {
+        
+        actionToAddOrEdit(alertTitle: "Edit category:", placeholderText: "Category to edit", actionText: "Edit", indexPath: indexPath)
+    }
+
+
+    //MARK: - Data deletion using swipe
+    
+    override func deleteDataInModel(at indexPath: IndexPath) {
+        
+        if let categoryToDelete = categoryArray?[indexPath.row] {
+            do {
+                try realm.write {
+                    realm.delete(categoryToDelete)
+                }
+            } catch {
+                print("Error deleting category, \(error)")
+            }
+        }
+    }
+}
+
+
+//MARK: - Create add or edit method with alert
+
+extension CategoryViewController {
+    
+    func actionToAddOrEdit(alertTitle: String, placeholderText: String, actionText: String, indexPath: IndexPath?) {
+        
+        var textField = UITextField()
+        
+        let alert = UIAlertController(title: alertTitle, message: nil, preferredStyle: .alert)
+        let cancel = UIAlertAction(title: "Cancel", style: .cancel, handler: nil)
+        let action = UIAlertAction(title: actionText, style: .default) { (action) in
+            
+            if actionText == "Add" {
+                
+                let newCategory = Category()
+                newCategory.name = textField.text!
+                newCategory.backgroundColor = UIColor.randomFlat.hexValue()
+                
+                self.saveCategories(newCategory)
+            }
+            else if actionText == "Edit" {
+                
+                if let categoryToEdit = self.categoryArray?[(indexPath?.row)!] {
+                    do {
+                        try self.realm.write {
+                            categoryToEdit.name = textField.text!
+                        }
+                    } catch {
+                        print("Error editing category, \(error)")
+                    }
+                }
+                self.tableView.reloadData()
+            }
+        }
+        
+        alert.addTextField { (alertTextField) in
+            alertTextField.placeholder = placeholderText
+            textField = alertTextField
+            if actionText == "Edit" {
+                textField.text = self.categoryArray?[(indexPath?.row)!].name
+            }
+        }
+        
+        alert.addAction(cancel)
+        alert.addAction(action)
+        present(alert, animated: true, completion: nil)
+    }
+    
 }
